@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>廃棄物計量表 / Garbage measurement</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root{
+    --ink:#1c2321;
+    --sub:#6d7570;
+    --line:#dfe3e0;
+    --bg:#f2f4f2;
+    --card:#ffffff;
+    --accent:#0f6b5c;
+    --accent-dark:#0b5347;
+    --accent-soft:#e4f0ed;
+    --danger:#c1402f;
+    --c1:#2a78d6; --c2:#1baf7a; --c3:#eda100; --c4:#5b8c1a; --c5:#a05a2c;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",Roboto,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+  }
+  .wrap{max-width:560px;margin:0 auto;padding:18px 16px 48px;}
+  header{padding:2px 2px 16px;}
+  header h1{font-size:19px;font-weight:700;margin:0 0 2px;letter-spacing:.01em;}
+  header p{font-size:12.5px;color:var(--sub);margin:0;}
+
+  .tabs{
+    display:flex;
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:4px;
+    margin-bottom:16px;
+    gap:4px;
+  }
+  .tab{
+    flex:1;
+    text-align:center;
+    padding:10px 4px;
+    font-size:13.5px;
+    font-weight:600;
+    color:var(--sub);
+    border-radius:9px;
+    cursor:pointer;
+    user-select:none;
+  }
+  .tab.active{background:var(--accent);color:#fff;}
+
+  .view{display:none;}
+  .view.active{display:block;}
+
+  .card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:16px;
+    margin-bottom:14px;
+  }
+  label{display:block;font-size:13px;font-weight:600;margin-bottom:6px;}
+  input[type=text]{
+    width:100%;height:44px;border:1px solid var(--line);border-radius:10px;
+    padding:0 12px;font-size:15px;background:#fafafa;
+  }
+
+  select{
+    width:100%;height:44px;border:1px solid var(--line);border-radius:10px;
+    padding:0 10px;font-size:15px;background:#fafafa;color:inherit;
+  }
+  .field{margin-bottom:14px;}
+  .field:last-child{margin-bottom:0;}
+
+  .weight-row{
+    display:flex;align-items:center;gap:10px;
+    border:1px solid var(--line);border-radius:10px;
+    padding:8px 10px;background:#fafafa;margin-bottom:10px;
+  }
+  .weight-row:last-child{margin-bottom:0;}
+  .weight-row .dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+  .weight-row .label-block{flex:1;min-width:0;}
+  .weight-row .label-block .jp{font-size:14px;font-weight:600;}
+  .weight-row .label-block .en{font-size:11px;color:var(--sub);}
+  .weight-row input{
+    width:80px;height:38px;border:1px solid var(--line);border-radius:8px;
+    padding:0 8px;font-size:15px;text-align:right;background:#fff;
+  }
+  .weight-row .unit{font-size:12px;color:var(--sub);width:16px;}
+
+  button#submitBtn{
+    width:100%;height:50px;border:none;border-radius:12px;
+    background:var(--accent);color:#fff;font-size:16px;font-weight:700;
+  }
+  button#submitBtn:active{background:var(--accent-dark);}
+  button#submitBtn:disabled{background:#c7c7c7;}
+
+  #status{text-align:center;font-size:13px;margin-top:12px;min-height:16px;color:var(--sub);}
+  #status.error{color:var(--danger);}
+  #status.success{color:var(--accent-dark);font-weight:600;}
+
+  .summary-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px;}
+  .summary-head h2{font-size:15px;margin:0;}
+  .summary-head button{
+    border:none;background:var(--accent-soft);color:var(--accent-dark);
+    font-size:12px;font-weight:700;padding:6px 10px;border-radius:8px;
+  }
+  table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  th,td{padding:7px 6px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap;}
+  th:first-child,td:first-child{text-align:left;}
+  thead th{color:var(--sub);font-weight:600;font-size:11.5px;}
+  tfoot td{font-weight:700;border-top:2px solid var(--ink);border-bottom:none;}
+  .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:11.5px;color:var(--sub);}
+  .legend span{display:flex;align-items:center;gap:5px;}
+  .legend .dot{width:9px;height:9px;border-radius:2px;}
+  .empty{font-size:13px;color:var(--sub);text-align:center;padding:20px 0;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>廃棄物計量表 / Garbage measurement</h1>
+    <p>入力・月別集計を1つの画面で / Log an entry and view monthly totals.</p>
+  </header>
+
+  <div class="tabs">
+    <div class="tab active" data-view="formView">入力 / Submit</div>
+    <div class="tab" data-view="summaryView">月別集計 / Monthly</div>
+  </div>
+
+  <!-- ============ SUBMIT VIEW ============ -->
+  <div id="formView" class="view active">
+    <div class="card">
+      <div class="field">
+        <label for="name">氏名 / Name</label>
+        <input type="text" id="name" placeholder="山田 太郎 / Taro Yamada">
+      </div>
+      <div class="field">
+        <label for="section">所属 / Section</label>
+        <select id="section">
+        <option value="">選択してください / Select</option>
+        <option value="西工場/West Factory">西工場/West Factory</option>
+        <option value="東工場/East Factory">東工場/East Factory</option>
+        <option value="シートメタル/Sheet Metal">シートメタル/Sheet Metal</option>
+        <option value="とうふ工房/Tofu Factory">とうふ工房/Tofu Factory</option>
+        <option value="実習生/Trainee">実習生/Trainee</option>
+        <option value="女子寮①(管理棟前)/Women's Dormitory ① (in front of Management Building)">女子寮①(管理棟前)/Women's Dormitory ① (in front of Management Building)</option>
+        <option value="女子寮②(とうふ工房横)/Women's Dormitory ② (next to Tofu Factory)">女子寮②(とうふ工房横)/Women's Dormitory ② (next to Tofu Factory)</option>
+      </select>
+      </div>
+    </div>
+
+    <div class="card">
+      <label style="margin-bottom:10px;">重さを入力 / Enter measured weight (kg)</label>
+
+      <div class="weight-row"><div class="dot" style="background:var(--c1);"></div>
+        <div class="label-block"><div class="jp">①燃えるゴミ</div><div class="en">Combustible</div></div>
+        <input type="text" inputmode="decimal" id="w1" placeholder="0.0"><div class="unit">kg</div>
+      </div>
+      <div class="weight-row"><div class="dot" style="background:var(--c2);"></div>
+        <div class="label-block"><div class="jp">②プラスチック</div><div class="en">Plastic</div></div>
+        <input type="text" inputmode="decimal" id="w2" placeholder="0.0"><div class="unit">kg</div>
+      </div>
+      <div class="weight-row"><div class="dot" style="background:var(--c3);"></div>
+        <div class="label-block"><div class="jp">③リサイクルペーパー</div><div class="en">Recycling paper</div></div>
+        <input type="text" inputmode="decimal" id="w3" placeholder="0.0"><div class="unit">kg</div>
+      </div>
+      <div class="weight-row"><div class="dot" style="background:var(--c4);"></div>
+        <div class="label-block"><div class="jp">④雑誌・紙</div><div class="en">Magazine / Paper</div></div>
+        <input type="text" inputmode="decimal" id="w4" placeholder="0.0"><div class="unit">kg</div>
+      </div>
+      <div class="weight-row"><div class="dot" style="background:var(--c5);"></div>
+        <div class="label-block"><div class="jp">⑤段ボール</div><div class="en">Cardboard</div></div>
+        <input type="text" inputmode="decimal" id="w5" placeholder="0.0"><div class="unit">kg</div>
+      </div>
+    </div>
+
+    <button id="submitBtn">送信 / Submit</button>
+    <div id="status"></div>
+  </div>
+
+  <!-- ============ SUMMARY VIEW ============ -->
+  <div id="summaryView" class="view">
+    <div class="card">
+      <div class="summary-head">
+        <h2>月別合計 (kg) / Monthly totals (kg)</h2>
+        <button id="refreshBtn">更新 / Refresh</button>
+      </div>
+      <select id="filterSection" style="margin-bottom:12px;">
+        <option value="">全部署 / All sections</option>
+      </select>
+      <canvas id="summaryChart" height="180"></canvas>
+      <div class="legend">
+        <span><span class="dot" style="background:var(--c1);"></span>燃えるゴミ / Combustible</span>
+        <span><span class="dot" style="background:var(--c2);"></span>プラスチック / Plastic</span>
+        <span><span class="dot" style="background:var(--c3);"></span>リサイクル紙 / Recycling paper</span>
+        <span><span class="dot" style="background:var(--c4);"></span>雑誌・紙 / Magazine</span>
+        <span><span class="dot" style="background:var(--c5);"></span>段ボール / Cardboard</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="table-scroll">
+        <table id="summaryTable">
+          <thead>
+            <tr>
+              <th>月 / Month</th>
+              <th>燃える</th><th>プラ</th><th>紙リサ</th><th>雑誌</th><th>段ボ</th><th>合計</th>
+            </tr>
+          </thead>
+          <tbody id="summaryBody"></tbody>
+          <tfoot id="summaryFoot"></tfoot>
+        </table>
+      </div>
+      <div id="summaryEmpty" class="empty" style="display:none;">データがまだありません / No entries yet.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Enter key moves to the next field (own script block so it works even if other code errors)
+  (function () {
+    var ids = ['name', 'section', 'w1', 'w2', 'w3', 'w4', 'w5'];
+    var order = ids.map(function (id) { return document.getElementById(id); }).filter(Boolean);
+    order.forEach(function (el, i) {
+      el.setAttribute('enterkeyhint', i === order.length - 1 ? 'done' : 'next');
+      el.addEventListener('keydown', function (e) {
+        var isEnter = e.key === 'Enter' || e.keyCode === 13;
+        if (!isEnter || e.isComposing || e.keyCode === 229) return; // Enter used to confirm IME text
+        e.preventDefault();
+        var next = order[i + 1];
+        if (next) { next.focus(); if (next.select) next.select(); }
+        else { el.blur(); var b = document.getElementById('submitBtn'); if (b) b.focus(); }
+      });
+    });
+  })();
+</script>
+<script>
+  // ---------- tab switching ----------
+  document.querySelectorAll('.tab').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      document.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('active'); });
+      document.querySelectorAll('.view').forEach(function (v) { v.classList.remove('active'); });
+      tab.classList.add('active');
+      document.getElementById(tab.dataset.view).classList.add('active');
+      if (tab.dataset.view === 'summaryView') loadSummary();
+    });
+  });
+
+  // ---------- submit ----------
+  var statusEl = document.getElementById('status');
+  var submitBtn = document.getElementById('submitBtn');
+
+  function setStatus(msg, type) {
+    statusEl.textContent = msg;
+    statusEl.className = type || '';
+  }
+
+  function toNumber(v) {
+    var n = parseFloat(String(v).replace(',', '.'));
+    return isNaN(n) ? 0 : n;
+  }
+
+  submitBtn.addEventListener('click', function () {
+    var payload = {
+      name: document.getElementById('name').value.trim(),
+      section: document.getElementById('section').value.trim(),
+      w1: toNumber(document.getElementById('w1').value),
+      w2: toNumber(document.getElementById('w2').value),
+      w3: toNumber(document.getElementById('w3').value),
+      w4: toNumber(document.getElementById('w4').value),
+      w5: toNumber(document.getElementById('w5').value)
+    };
+
+    if (payload.w1 <= 0 && payload.w2 <= 0 && payload.w3 <= 0 && payload.w4 <= 0 && payload.w5 <= 0) {
+      setStatus('少なくとも1つの重さを入力してください / Enter at least one weight.', 'error');
+      return;
+    }
+
+    submitBtn.disabled = true;
+    setStatus('送信中... / Sending...');
+
+    google.script.run
+      .withSuccessHandler(function () {
+        setStatus('送信しました / Saved.', 'success');
+        ['w1', 'w2', 'w3', 'w4', 'w5'].forEach(function (id) { document.getElementById(id).value = ''; });
+        submitBtn.disabled = false;
+      })
+      .withFailureHandler(function (err) {
+        setStatus('エラー / Error: ' + err.message, 'error');
+        submitBtn.disabled = false;
+      })
+      .submitEntry(payload);
+  });
+
+  // ---------- monthly summary ----------
+  var chart = null;
+  document.getElementById('refreshBtn').addEventListener('click', loadSummary);
+  document.getElementById('filterSection').addEventListener('change', loadSummary);
+  google.script.run.withSuccessHandler(function (list) {
+    var sel = document.getElementById('filterSection');
+    list.forEach(function (s) {
+      var o = document.createElement('option');
+      o.value = s; o.textContent = s;
+      sel.appendChild(o);
+    });
+  }).getSections();
+
+  function loadSummary() {
+    google.script.run
+      .withSuccessHandler(renderSummary)
+      .withFailureHandler(function (err) {
+        document.getElementById('summaryEmpty').style.display = 'block';
+        document.getElementById('summaryEmpty').textContent = 'エラー / Error: ' + err.message;
+      })
+      .getMonthlySummary(document.getElementById('filterSection').value);
+  }
+
+  function renderSummary(rows) {
+    var tbody = document.getElementById('summaryBody');
+    var tfoot = document.getElementById('summaryFoot');
+    var empty = document.getElementById('summaryEmpty');
+    tbody.innerHTML = '';
+    tfoot.innerHTML = '';
+
+    if (!rows || rows.length === 0) {
+      empty.style.display = 'block';
+      empty.textContent = 'データがまだありません / No entries yet.';
+      if (chart) { chart.destroy(); chart = null; }
+      return;
+    }
+    empty.style.display = 'none';
+
+    var totals = { combustible: 0, plastic: 0, recyclingPaper: 0, magazinePaper: 0, cardboard: 0, total: 0 };
+    rows.forEach(function (r) {
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + r.month + '</td>' +
+        '<td>' + r.combustible.toFixed(1) + '</td>' +
+        '<td>' + r.plastic.toFixed(1) + '</td>' +
+        '<td>' + r.recyclingPaper.toFixed(1) + '</td>' +
+        '<td>' + r.magazinePaper.toFixed(1) + '</td>' +
+        '<td>' + r.cardboard.toFixed(1) + '</td>' +
+        '<td>' + r.total.toFixed(1) + '</td>';
+      tbody.appendChild(tr);
+      totals.combustible += r.combustible;
+      totals.plastic += r.plastic;
+      totals.recyclingPaper += r.recyclingPaper;
+      totals.magazinePaper += r.magazinePaper;
+      totals.cardboard += r.cardboard;
+      totals.total += r.total;
+    });
+
+    tfoot.innerHTML =
+      '<tr><td>合計/Total</td>' +
+      '<td>' + totals.combustible.toFixed(1) + '</td>' +
+      '<td>' + totals.plastic.toFixed(1) + '</td>' +
+      '<td>' + totals.recyclingPaper.toFixed(1) + '</td>' +
+      '<td>' + totals.magazinePaper.toFixed(1) + '</td>' +
+      '<td>' + totals.cardboard.toFixed(1) + '</td>' +
+      '<td>' + totals.total.toFixed(1) + '</td></tr>';
+
+    var labels = rows.map(function (r) { return r.month; });
+    var css = getComputedStyle(document.documentElement);
+    var colors = {
+      c1: css.getPropertyValue('--c1').trim(),
+      c2: css.getPropertyValue('--c2').trim(),
+      c3: css.getPropertyValue('--c3').trim(),
+      c4: css.getPropertyValue('--c4').trim(),
+      c5: css.getPropertyValue('--c5').trim()
+    };
+
+    var datasets = [
+      { label: '燃えるゴミ', data: rows.map(function (r) { return r.combustible; }), backgroundColor: colors.c1, stack: 's' },
+      { label: 'プラスチック', data: rows.map(function (r) { return r.plastic; }), backgroundColor: colors.c2, stack: 's' },
+      { label: 'リサイクル紙', data: rows.map(function (r) { return r.recyclingPaper; }), backgroundColor: colors.c3, stack: 's' },
+      { label: '雑誌・紙', data: rows.map(function (r) { return r.magazinePaper; }), backgroundColor: colors.c4, stack: 's' },
+      { label: '段ボール', data: rows.map(function (r) { return r.cardboard; }), backgroundColor: colors.c5, stack: 's' }
+    ];
+
+    if (chart) chart.destroy();
+    chart = new Chart(document.getElementById('summaryChart'), {
+      type: 'bar',
+      data: { labels: labels, datasets: datasets },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { stacked: true, grid: { display: false } },
+          y: { stacked: true, title: { display: true, text: 'kg' } }
+        }
+      }
+    });
+  }
+
+  // Load summary once up front so the tab has data the first time it's opened.
+  loadSummary();
+
+</script>
+</body>
+</html>
