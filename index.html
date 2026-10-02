@@ -200,13 +200,43 @@
         <div class="group-tab" data-group="monthly">月別 / Monthly</div>
         <div class="group-tab" data-group="section">所属別 / Section</div>
       </div>
-      <div class="table-scroll">
-        <table id="totalsTable">
-          <thead><tr><th id="totalsLabelHead">日付 / Date</th><th>合計 (kg)</th></tr></thead>
-          <tbody id="totalsBody"></tbody>
-          <tfoot id="totalsFoot"></tfoot>
-        </table>
+
+      <!-- DAILY: date -> total -->
+      <div id="dailyGroup" class="group-panel">
+        <div class="table-scroll">
+          <table id="dailyTable">
+            <thead><tr><th>日付 / Date</th><th>合計 (kg)</th></tr></thead>
+            <tbody id="dailyBody"></tbody>
+            <tfoot id="dailyFoot"></tfoot>
+          </table>
+        </div>
       </div>
+
+      <!-- MONTHLY: all sections + overall total by default, or pick one section -->
+      <div id="monthlyGroup" class="group-panel" style="display:none;">
+        <select id="monthlySectionFilter" style="margin-bottom:12px;">
+          <option value="">全体 / All sections</option>
+        </select>
+        <div class="table-scroll">
+          <table id="monthlyTable">
+            <thead id="monthlyHead"><tr><th>月 / Month</th><th>合計 (kg)</th></tr></thead>
+            <tbody id="monthlyBody"></tbody>
+            <tfoot id="monthlyFoot"></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- SECTION: section -> total (all time) -->
+      <div id="sectionGroup" class="group-panel" style="display:none;">
+        <div class="table-scroll">
+          <table id="sectionTotalsTable">
+            <thead><tr><th>所属 / Section</th><th>合計 (kg)</th></tr></thead>
+            <tbody id="sectionTotalsBody"></tbody>
+            <tfoot id="sectionTotalsFoot"></tfoot>
+          </table>
+        </div>
+      </div>
+
       <div id="summaryEmpty" class="empty" style="display:none;">データがまだありません / No entries yet.</div>
     </div>
   </div>
@@ -298,63 +328,203 @@
   });
 
   // ---------- totals: one-click daily / monthly / section toggle ----------
-  var GROUP_CONFIG = {
-    daily:   { action: 'daily',         labelHead: '日付 / Date',   labelKey: 'date' },
-    monthly: { action: 'summary',       labelHead: '月 / Month',    labelKey: 'month' },
-    section: { action: 'sectionTotals', labelHead: '所属 / Section', labelKey: 'section' }
-  };
-  var currentGroup = 'daily';
+  function showEmpty(msg) {
+    var e = document.getElementById('summaryEmpty');
+    e.style.display = 'block';
+    e.textContent = msg;
+  }
+  function hideEmpty() {
+    document.getElementById('summaryEmpty').style.display = 'none';
+  }
 
   document.querySelectorAll('.group-tab').forEach(function (tab) {
     tab.addEventListener('click', function () {
       document.querySelectorAll('.group-tab').forEach(function (t) { t.classList.remove('active'); });
       tab.classList.add('active');
-      currentGroup = tab.dataset.group;
-      loadSummary();
+      var g = tab.dataset.group;
+      document.getElementById('dailyGroup').style.display   = g === 'daily'   ? '' : 'none';
+      document.getElementById('monthlyGroup').style.display = g === 'monthly' ? '' : 'none';
+      document.getElementById('sectionGroup').style.display = g === 'section' ? '' : 'none';
+      loadGroup(g);
     });
   });
-  document.getElementById('refreshBtn').addEventListener('click', loadSummary);
 
-  function loadSummary() {
-    var cfg = GROUP_CONFIG[currentGroup];
-    document.getElementById('totalsLabelHead').textContent = cfg.labelHead;
-    fetch(API_URL + '?action=' + cfg.action)
-      .then(function (r) { return r.json(); })
-      .then(renderTotals)
-      .catch(function (err) {
-        document.getElementById('summaryEmpty').style.display = 'block';
-        document.getElementById('summaryEmpty').textContent = 'エラー / Error: ' + err.message;
+  document.getElementById('refreshBtn').addEventListener('click', function () {
+    var active = document.querySelector('.group-tab.active');
+    loadGroup(active ? active.dataset.group : 'daily');
+  });
+
+  document.getElementById('monthlySectionFilter').addEventListener('change', loadMonthly);
+
+  // Fill the Monthly tab's section dropdown once.
+  fetch(API_URL + '?action=sections')
+    .then(function (r) { return r.json(); })
+    .then(function (list) {
+      var sel = document.getElementById('monthlySectionFilter');
+      list.forEach(function (s) {
+        var o = document.createElement('option');
+        o.value = s; o.textContent = s;
+        sel.appendChild(o);
       });
+    })
+    .catch(function () { /* dropdown just stays as "All sections" */ });
+
+  function loadGroup(g) {
+    hideEmpty();
+    if (g === 'daily') loadDaily();
+    else if (g === 'monthly') loadMonthly();
+    else loadSectionTotals();
   }
 
-  function renderTotals(rows) {
-    var body = document.getElementById('totalsBody');
-    var foot = document.getElementById('totalsFoot');
-    var empty = document.getElementById('summaryEmpty');
-    body.innerHTML = '';
-    foot.innerHTML = '';
+  // ---- Daily: date -> total ----
+  function loadDaily() {
+    fetch(API_URL + '?action=daily')
+      .then(function (r) { return r.json(); })
+      .then(renderDaily)
+      .catch(function (err) { showEmpty('エラー / Error: ' + err.message); });
+  }
 
-    if (!rows || rows.length === 0) {
-      empty.style.display = 'block';
-      empty.textContent = 'データがまだありません / No entries yet.';
-      return;
-    }
-    empty.style.display = 'none';
+  function renderDaily(rows) {
+    var body = document.getElementById('dailyBody');
+    var foot = document.getElementById('dailyFoot');
+    body.innerHTML = ''; foot.innerHTML = '';
+    if (!rows || rows.length === 0) { showEmpty('データがまだありません / No entries yet.'); return; }
 
-    var labelKey = GROUP_CONFIG[currentGroup].labelKey;
     var grand = 0;
     rows.forEach(function (r) {
       grand += r.total;
       var tr = document.createElement('tr');
-      tr.innerHTML = '<td>' + r[labelKey] + '</td><td>' + r.total.toFixed(1) + '</td>';
+      tr.innerHTML = '<td>' + r.date + '</td><td>' + r.total.toFixed(1) + '</td>';
       body.appendChild(tr);
     });
-
     foot.innerHTML = '<tr><td>合計/Total</td><td>' + grand.toFixed(1) + '</td></tr>';
   }
 
-  // Load summary once up front so the tab has data the first time it's opened.
-  loadSummary();
+  // ---- Monthly: "All sections" pivot (with overall total) by default, or one selected section ----
+  function loadMonthly() {
+    var section = document.getElementById('monthlySectionFilter').value;
+    if (section) {
+      fetch(API_URL + '?action=summary&section=' + encodeURIComponent(section))
+        .then(function (r) { return r.json(); })
+        .then(renderMonthlySingle)
+        .catch(function (err) { showEmpty('エラー / Error: ' + err.message); });
+    } else {
+      fetch(API_URL + '?action=sectionTable')
+        .then(function (r) { return r.json(); })
+        .then(renderMonthlyPivot)
+        .catch(function (err) { showEmpty('エラー / Error: ' + err.message); });
+    }
+  }
+
+  function renderMonthlySingle(rows) {
+    var head = document.getElementById('monthlyHead');
+    var body = document.getElementById('monthlyBody');
+    var foot = document.getElementById('monthlyFoot');
+    head.innerHTML = '<tr><th>月 / Month</th><th>合計 (kg)</th></tr>';
+    body.innerHTML = ''; foot.innerHTML = '';
+    if (!rows || rows.length === 0) { showEmpty('データがまだありません / No entries yet.'); return; }
+
+    var grand = 0;
+    rows.forEach(function (r) {
+      grand += r.total;
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + r.month + '</td><td>' + r.total.toFixed(1) + '</td>';
+      body.appendChild(tr);
+    });
+    foot.innerHTML = '<tr><td>合計/Total</td><td>' + grand.toFixed(1) + '</td></tr>';
+  }
+
+  function renderMonthlyPivot(data) {
+    var head = document.getElementById('monthlyHead');
+    var body = document.getElementById('monthlyBody');
+    var foot = document.getElementById('monthlyFoot');
+    body.innerHTML = ''; foot.innerHTML = ''; head.innerHTML = '';
+
+    var months = (data && data.months) || [];
+    var sections = (data && data.sections) || [];
+    var table = (data && data.table) || {};
+
+    if (months.length === 0 || sections.length === 0) {
+      showEmpty('データがまだありません / No entries yet.');
+      return;
+    }
+
+    var headRow = document.createElement('tr');
+    headRow.innerHTML = '<th>所属 / Section</th>';
+    months.forEach(function (m) {
+      var th = document.createElement('th'); th.textContent = m; headRow.appendChild(th);
+    });
+    var totalTh = document.createElement('th'); totalTh.textContent = '合計/Total'; headRow.appendChild(totalTh);
+    head.appendChild(headRow);
+
+    var monthTotals = {};
+    months.forEach(function (m) { monthTotals[m] = 0; });
+    var grandTotal = 0;
+
+    sections.forEach(function (section) {
+      var tr = document.createElement('tr');
+      var nameTd = document.createElement('td'); nameTd.textContent = section; tr.appendChild(nameTd);
+
+      var rowTotal = 0;
+      months.forEach(function (m) {
+        var v = (table[section] && table[section][m]) || 0;
+        rowTotal += v; monthTotals[m] += v;
+        var td = document.createElement('td');
+        td.textContent = v ? v.toFixed(1) : '-';
+        tr.appendChild(td);
+      });
+      grandTotal += rowTotal;
+
+      var totalTd = document.createElement('td');
+      totalTd.textContent = rowTotal.toFixed(1);
+      totalTd.style.fontWeight = '700';
+      tr.appendChild(totalTd);
+
+      body.appendChild(tr);
+    });
+
+    var footTr = document.createElement('tr');
+    var footLabelTd = document.createElement('td');
+    footLabelTd.textContent = '全体合計 / Overall total';
+    footLabelTd.style.fontWeight = '700';
+    footTr.appendChild(footLabelTd);
+    months.forEach(function (m) {
+      var td = document.createElement('td');
+      td.textContent = monthTotals[m].toFixed(1);
+      footTr.appendChild(td);
+    });
+    var grandTd = document.createElement('td');
+    grandTd.textContent = grandTotal.toFixed(1);
+    footTr.appendChild(grandTd);
+    foot.appendChild(footTr);
+  }
+
+  // ---- Section: section -> total (all time) ----
+  function loadSectionTotals() {
+    fetch(API_URL + '?action=sectionTotals')
+      .then(function (r) { return r.json(); })
+      .then(renderSectionTotals)
+      .catch(function (err) { showEmpty('エラー / Error: ' + err.message); });
+  }
+
+  function renderSectionTotals(rows) {
+    var body = document.getElementById('sectionTotalsBody');
+    var foot = document.getElementById('sectionTotalsFoot');
+    body.innerHTML = ''; foot.innerHTML = '';
+    if (!rows || rows.length === 0) { showEmpty('データがまだありません / No entries yet.'); return; }
+
+    var grand = 0;
+    rows.forEach(function (r) {
+      grand += r.total;
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + r.section + '</td><td>' + r.total.toFixed(1) + '</td>';
+      body.appendChild(tr);
+    });
+    foot.innerHTML = '<tr><td>合計/Total</td><td>' + grand.toFixed(1) + '</td></tr>';
+  }
+
+  // Load the Daily view up front so the tab has data the first time it's opened.
+  loadGroup('daily');
 </script>
 </body>
 </html>
