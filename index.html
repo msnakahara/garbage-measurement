@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>廃棄物計量表 / Garbage measurement</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <style>
   :root{
     --ink:#1c2321;
@@ -187,33 +186,14 @@
   <div id="summaryView" class="view">
     <div class="card">
       <div class="summary-head">
-        <h2>月別合計 (kg) / Monthly totals (kg)</h2>
+        <h2>所属別 月間合計 (kg) / Total by section, by month (kg)</h2>
         <button id="refreshBtn">更新 / Refresh</button>
       </div>
-      <select id="filterSection" style="margin-bottom:12px;">
-        <option value="">全部署 / All sections</option>
-      </select>
-      <canvas id="summaryChart" height="180"></canvas>
-      <div class="legend">
-        <span><span class="dot" style="background:var(--c1);"></span>燃えるゴミ / Combustible</span>
-        <span><span class="dot" style="background:var(--c2);"></span>プラスチック / Plastic</span>
-        <span><span class="dot" style="background:var(--c3);"></span>リサイクル紙 / Recycling paper</span>
-        <span><span class="dot" style="background:var(--c4);"></span>雑誌・紙 / Magazine</span>
-        <span><span class="dot" style="background:var(--c5);"></span>段ボール / Cardboard</span>
-      </div>
-    </div>
-
-    <div class="card">
       <div class="table-scroll">
-        <table id="summaryTable">
-          <thead>
-            <tr>
-              <th>月 / Month</th>
-              <th>燃える</th><th>プラ</th><th>紙リサ</th><th>雑誌</th><th>段ボ</th><th>合計</th>
-            </tr>
-          </thead>
-          <tbody id="summaryBody"></tbody>
-          <tfoot id="summaryFoot"></tfoot>
+        <table id="sectionTable">
+          <thead><tr id="sectionTableHead"><th>所属 / Section</th></tr></thead>
+          <tbody id="sectionTableBody"></tbody>
+          <tfoot id="sectionTableFoot"></tfoot>
         </table>
       </div>
       <div id="summaryEmpty" class="empty" style="display:none;">データがまだありません / No entries yet.</div>
@@ -306,109 +286,91 @@
       });
   });
 
-  // ---------- monthly summary ----------
-  var chart = null;
+  // ---------- monthly summary: section x month pivot table (no chart) ----------
   document.getElementById('refreshBtn').addEventListener('click', loadSummary);
-  document.getElementById('filterSection').addEventListener('change', loadSummary);
-
-  fetch(API_URL + '?action=sections')
-    .then(function (r) { return r.json(); })
-    .then(function (list) {
-      var sel = document.getElementById('filterSection');
-      list.forEach(function (s) {
-        var o = document.createElement('option');
-        o.value = s; o.textContent = s;
-        sel.appendChild(o);
-      });
-    })
-    .catch(function () { /* section filter just stays as "All sections" */ });
 
   function loadSummary() {
-    var section = document.getElementById('filterSection').value;
-    fetch(API_URL + '?action=summary&section=' + encodeURIComponent(section))
+    fetch(API_URL + '?action=sectionTable')
       .then(function (r) { return r.json(); })
-      .then(renderSummary)
+      .then(renderSectionTable)
       .catch(function (err) {
         document.getElementById('summaryEmpty').style.display = 'block';
         document.getElementById('summaryEmpty').textContent = 'エラー / Error: ' + err.message;
       });
   }
 
-  function renderSummary(rows) {
-    var tbody = document.getElementById('summaryBody');
-    var tfoot = document.getElementById('summaryFoot');
+  function renderSectionTable(data) {
+    var head = document.getElementById('sectionTableHead');
+    var body = document.getElementById('sectionTableBody');
+    var foot = document.getElementById('sectionTableFoot');
     var empty = document.getElementById('summaryEmpty');
-    tbody.innerHTML = '';
-    tfoot.innerHTML = '';
 
-    if (!rows || rows.length === 0) {
+    head.innerHTML = '<th>所属 / Section</th>';
+    body.innerHTML = '';
+    foot.innerHTML = '';
+
+    var months = (data && data.months) || [];
+    var sections = (data && data.sections) || [];
+    var table = (data && data.table) || {};
+
+    if (months.length === 0 || sections.length === 0) {
       empty.style.display = 'block';
       empty.textContent = 'データがまだありません / No entries yet.';
-      if (chart) { chart.destroy(); chart = null; }
       return;
     }
     empty.style.display = 'none';
 
-    var totals = { combustible: 0, plastic: 0, recyclingPaper: 0, magazinePaper: 0, cardboard: 0, total: 0 };
-    rows.forEach(function (r) {
+    months.forEach(function (m) {
+      var th = document.createElement('th');
+      th.textContent = m;
+      head.appendChild(th);
+    });
+    var totalTh = document.createElement('th');
+    totalTh.textContent = '合計/Total';
+    head.appendChild(totalTh);
+
+    var monthTotals = {};
+    months.forEach(function (m) { monthTotals[m] = 0; });
+    var grandTotal = 0;
+
+    sections.forEach(function (section) {
       var tr = document.createElement('tr');
-      tr.innerHTML =
-        '<td>' + r.month + '</td>' +
-        '<td>' + r.combustible.toFixed(1) + '</td>' +
-        '<td>' + r.plastic.toFixed(1) + '</td>' +
-        '<td>' + r.recyclingPaper.toFixed(1) + '</td>' +
-        '<td>' + r.magazinePaper.toFixed(1) + '</td>' +
-        '<td>' + r.cardboard.toFixed(1) + '</td>' +
-        '<td>' + r.total.toFixed(1) + '</td>';
-      tbody.appendChild(tr);
-      totals.combustible += r.combustible;
-      totals.plastic += r.plastic;
-      totals.recyclingPaper += r.recyclingPaper;
-      totals.magazinePaper += r.magazinePaper;
-      totals.cardboard += r.cardboard;
-      totals.total += r.total;
+      var nameTd = document.createElement('td');
+      nameTd.textContent = section;
+      tr.appendChild(nameTd);
+
+      var rowTotal = 0;
+      months.forEach(function (m) {
+        var v = (table[section] && table[section][m]) || 0;
+        rowTotal += v;
+        monthTotals[m] += v;
+        var td = document.createElement('td');
+        td.textContent = v ? v.toFixed(1) : '-';
+        tr.appendChild(td);
+      });
+      grandTotal += rowTotal;
+
+      var totalTd = document.createElement('td');
+      totalTd.textContent = rowTotal.toFixed(1);
+      totalTd.style.fontWeight = '700';
+      tr.appendChild(totalTd);
+
+      body.appendChild(tr);
     });
 
-    tfoot.innerHTML =
-      '<tr><td>合計/Total</td>' +
-      '<td>' + totals.combustible.toFixed(1) + '</td>' +
-      '<td>' + totals.plastic.toFixed(1) + '</td>' +
-      '<td>' + totals.recyclingPaper.toFixed(1) + '</td>' +
-      '<td>' + totals.magazinePaper.toFixed(1) + '</td>' +
-      '<td>' + totals.cardboard.toFixed(1) + '</td>' +
-      '<td>' + totals.total.toFixed(1) + '</td></tr>';
-
-    var labels = rows.map(function (r) { return r.month; });
-    var css = getComputedStyle(document.documentElement);
-    var colors = {
-      c1: css.getPropertyValue('--c1').trim(),
-      c2: css.getPropertyValue('--c2').trim(),
-      c3: css.getPropertyValue('--c3').trim(),
-      c4: css.getPropertyValue('--c4').trim(),
-      c5: css.getPropertyValue('--c5').trim()
-    };
-
-    var datasets = [
-      { label: '燃えるゴミ', data: rows.map(function (r) { return r.combustible; }), backgroundColor: colors.c1, stack: 's' },
-      { label: 'プラスチック', data: rows.map(function (r) { return r.plastic; }), backgroundColor: colors.c2, stack: 's' },
-      { label: 'リサイクル紙', data: rows.map(function (r) { return r.recyclingPaper; }), backgroundColor: colors.c3, stack: 's' },
-      { label: '雑誌・紙', data: rows.map(function (r) { return r.magazinePaper; }), backgroundColor: colors.c4, stack: 's' },
-      { label: '段ボール', data: rows.map(function (r) { return r.cardboard; }), backgroundColor: colors.c5, stack: 's' }
-    ];
-
-    if (chart) chart.destroy();
-    chart = new Chart(document.getElementById('summaryChart'), {
-      type: 'bar',
-      data: { labels: labels, datasets: datasets },
-      options: {
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { stacked: true, grid: { display: false } },
-          y: { stacked: true, title: { display: true, text: 'kg' } }
-        }
-      }
+    var footTr = document.createElement('tr');
+    var footLabelTd = document.createElement('td');
+    footLabelTd.textContent = '合計/Total';
+    footTr.appendChild(footLabelTd);
+    months.forEach(function (m) {
+      var td = document.createElement('td');
+      td.textContent = monthTotals[m].toFixed(1);
+      footTr.appendChild(td);
     });
+    var grandTd = document.createElement('td');
+    grandTd.textContent = grandTotal.toFixed(1);
+    footTr.appendChild(grandTd);
+    foot.appendChild(footTr);
   }
 
   // Load summary once up front so the tab has data the first time it's opened.
