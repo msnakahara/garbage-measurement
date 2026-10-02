@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<base target="_top">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>廃棄物計量表 / Garbage measurement</title>
@@ -223,7 +222,12 @@
 </div>
 
 <script>
-  // Enter key moves to the next field (own script block so it works even if other code errors)
+  // ---------------------------------------------------------------------
+  // Paste your Apps Script Web App deployment URL here (ends in /exec).
+  // ---------------------------------------------------------------------
+  var API_URL = 'https://script.google.com/macros/s/AKfycbysiAJ97PGoRb-KqDP6_ic1gukXSeFWum7QnELpGhEAvn0Zcb8K8Fr2lvMiCEs-_ZbD/exec';
+
+  // Enter key moves to the next field
   (function () {
     var ids = ['name', 'section', 'w1', 'w2', 'w3', 'w4', 'w5'];
     var order = ids.map(function (id) { return document.getElementById(id); }).filter(Boolean);
@@ -239,8 +243,7 @@
       });
     });
   })();
-</script>
-<script>
+
   // ---------- tab switching ----------
   document.querySelectorAll('.tab').forEach(function (tab) {
     tab.addEventListener('click', function () {
@@ -285,40 +288,50 @@
     submitBtn.disabled = true;
     setStatus('送信中... / Sending...');
 
-    google.script.run
-      .withSuccessHandler(function () {
+    // NOTE: body is sent as a plain string (not JSON content-type) on purpose —
+    // this keeps the request a "simple request" so the browser skips a CORS
+    // preflight, which Apps Script Web Apps don't handle.
+    fetch(API_URL, { method: 'POST', body: JSON.stringify(payload) })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (!res.ok) throw new Error(res.error || 'Unknown error');
         setStatus('送信しました / Saved.', 'success');
         ['w1', 'w2', 'w3', 'w4', 'w5'].forEach(function (id) { document.getElementById(id).value = ''; });
-        submitBtn.disabled = false;
       })
-      .withFailureHandler(function (err) {
+      .catch(function (err) {
         setStatus('エラー / Error: ' + err.message, 'error');
-        submitBtn.disabled = false;
       })
-      .submitEntry(payload);
+      .finally(function () {
+        submitBtn.disabled = false;
+      });
   });
 
   // ---------- monthly summary ----------
   var chart = null;
   document.getElementById('refreshBtn').addEventListener('click', loadSummary);
   document.getElementById('filterSection').addEventListener('change', loadSummary);
-  google.script.run.withSuccessHandler(function (list) {
-    var sel = document.getElementById('filterSection');
-    list.forEach(function (s) {
-      var o = document.createElement('option');
-      o.value = s; o.textContent = s;
-      sel.appendChild(o);
-    });
-  }).getSections();
+
+  fetch(API_URL + '?action=sections')
+    .then(function (r) { return r.json(); })
+    .then(function (list) {
+      var sel = document.getElementById('filterSection');
+      list.forEach(function (s) {
+        var o = document.createElement('option');
+        o.value = s; o.textContent = s;
+        sel.appendChild(o);
+      });
+    })
+    .catch(function () { /* section filter just stays as "All sections" */ });
 
   function loadSummary() {
-    google.script.run
-      .withSuccessHandler(renderSummary)
-      .withFailureHandler(function (err) {
+    var section = document.getElementById('filterSection').value;
+    fetch(API_URL + '?action=summary&section=' + encodeURIComponent(section))
+      .then(function (r) { return r.json(); })
+      .then(renderSummary)
+      .catch(function (err) {
         document.getElementById('summaryEmpty').style.display = 'block';
         document.getElementById('summaryEmpty').textContent = 'エラー / Error: ' + err.message;
-      })
-      .getMonthlySummary(document.getElementById('filterSection').value);
+      });
   }
 
   function renderSummary(rows) {
@@ -400,7 +413,6 @@
 
   // Load summary once up front so the tab has data the first time it's opened.
   loadSummary();
-
 </script>
 </body>
 </html>
