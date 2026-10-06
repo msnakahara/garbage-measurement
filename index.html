@@ -119,6 +119,15 @@
   thead th{color:var(--sub);font-weight:600;font-size:11.5px;}
   tfoot td{font-weight:700;border-top:2px solid var(--ink);border-bottom:none;}
   .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+
+  /* Monthly pivot table: compact so it fits one screen width without side-scrolling */
+  #monthlyTable{font-size:9.5px;table-layout:fixed;}
+  #monthlyTable th,#monthlyTable td{padding:4px 2px;white-space:normal;word-break:break-word;line-height:1.25;}
+  #monthlyTable th:first-child,#monthlyTable td:first-child{
+    width:58px;text-align:left;font-size:9px;white-space:normal;
+  }
+  #monthlyTable th:not(:first-child),#monthlyTable td:not(:first-child){width:auto;}
+  #monthlyTable thead th{font-size:9px;}
   .legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;font-size:11.5px;color:var(--sub);}
   .legend span{display:flex;align-items:center;gap:5px;}
   .legend .dot{width:9px;height:9px;border-radius:2px;}
@@ -546,12 +555,20 @@
       return;
     }
 
+    // Short header labels (just the month number, e.g. "2026-10" -> "10") so each
+    // column stays narrow enough for the whole table to fit without side-scrolling.
+    function shortMonth(m) { return m.split('-')[1] || m; }
+    function shortSection(s) { return (s.split('/')[0] || s).trim(); } // Japanese half, before the "/"
+
     var headRow = document.createElement('tr');
-    headRow.innerHTML = '<th>所属 / Section</th>';
+    var sectionTh = document.createElement('th');
+    sectionTh.textContent = '所属';
+    sectionTh.title = '所属 / Section';
+    headRow.appendChild(sectionTh);
     months.forEach(function (m) {
-      var th = document.createElement('th'); th.textContent = m; headRow.appendChild(th);
+      var th = document.createElement('th'); th.textContent = shortMonth(m); th.title = m; headRow.appendChild(th);
     });
-    var totalTh = document.createElement('th'); totalTh.textContent = '合計/Total'; headRow.appendChild(totalTh);
+    var totalTh = document.createElement('th'); totalTh.textContent = '計'; totalTh.title = '合計 / Total'; headRow.appendChild(totalTh);
     head.appendChild(headRow);
 
     var monthTotals = {};
@@ -560,20 +577,23 @@
 
     sections.forEach(function (section) {
       var tr = document.createElement('tr');
-      var nameTd = document.createElement('td'); nameTd.textContent = section; tr.appendChild(nameTd);
+      var nameTd = document.createElement('td');
+      nameTd.textContent = shortSection(section);
+      nameTd.title = section;
+      tr.appendChild(nameTd);
 
       var rowTotal = 0;
       months.forEach(function (m) {
         var v = (table[section] && table[section][m]) || 0;
         rowTotal += v; monthTotals[m] += v;
         var td = document.createElement('td');
-        td.textContent = v ? v.toFixed(1) : '-';
+        td.textContent = v ? Math.round(v) : '-';
         tr.appendChild(td);
       });
       grandTotal += rowTotal;
 
       var totalTd = document.createElement('td');
-      totalTd.textContent = rowTotal.toFixed(1);
+      totalTd.textContent = Math.round(rowTotal);
       totalTd.style.fontWeight = '700';
       tr.appendChild(totalTd);
 
