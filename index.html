@@ -123,6 +123,25 @@
   .legend span{display:flex;align-items:center;gap:5px;}
   .legend .dot{width:9px;height:9px;border-radius:2px;}
   .empty{font-size:13px;color:var(--sub);text-align:center;padding:20px 0;}
+
+  .pin-card{text-align:center;padding:32px 16px;}
+  .pin-card .lock-icon{font-size:28px;margin-bottom:10px;}
+  .pin-card p.lead{font-size:14px;font-weight:600;margin:0 0 2px;}
+  .pin-card p.sub{font-size:12px;color:var(--sub);margin:0 0 18px;}
+  .pin-dots{display:flex;justify-content:center;gap:10px;margin-bottom:16px;}
+  .pin-dot{
+    width:14px;height:14px;border-radius:50%;border:1.5px solid var(--line);background:#fff;
+  }
+  .pin-dot.filled{background:var(--accent);border-color:var(--accent);}
+  input#pinInput{
+    position:absolute;opacity:0;pointer-events:none;height:0;width:0;
+  }
+  button#pinConfirmBtn{
+    width:100%;max-width:220px;height:46px;border:none;border-radius:12px;
+    background:var(--accent);color:#fff;font-size:15px;font-weight:700;margin-top:4px;
+  }
+  button#pinConfirmBtn:active{background:var(--accent-dark);}
+  #pinError{color:var(--danger);font-size:12.5px;margin-top:10px;min-height:16px;}
 </style>
 </head>
 <body>
@@ -188,8 +207,24 @@
     <div id="status"></div>
   </div>
 
-  <!-- ============ SUMMARY VIEW ============ -->
+  <!-- ============ SUMMARY VIEW (PIN protected) ============ -->
   <div id="summaryView" class="view">
+
+    <!-- PIN LOCK -->
+    <div id="pinLock" class="card pin-card">
+      <div class="lock-icon">🔒</div>
+      <p class="lead">暗証番号を入力 / Enter PIN</p>
+      <p class="sub">月別集計を見るには4桁の暗証番号が必要です / A 4-digit PIN is required to view totals.</p>
+      <div class="pin-dots" id="pinDots">
+        <div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div>
+      </div>
+      <input type="text" id="pinInput" inputmode="numeric" maxlength="4" autocomplete="off">
+      <button id="pinConfirmBtn">確認 / Confirm</button>
+      <div id="pinError"></div>
+    </div>
+
+    <!-- UNLOCKED CONTENT -->
+    <div id="summaryContent" style="display:none;">
     <div class="card">
       <div class="summary-head">
         <h2>合計を見る / View totals</h2>
@@ -239,6 +274,7 @@
 
       <div id="summaryEmpty" class="empty" style="display:none;">データがまだありません / No entries yet.</div>
     </div>
+    </div><!-- /summaryContent -->
   </div>
 </div>
 
@@ -272,9 +308,70 @@
       document.querySelectorAll('.view').forEach(function (v) { v.classList.remove('active'); });
       tab.classList.add('active');
       document.getElementById(tab.dataset.view).classList.add('active');
-      if (tab.dataset.view === 'summaryView') loadSummary();
+      if (tab.dataset.view === 'summaryView') {
+        if (sessionStorage.getItem('summaryUnlocked') === '1') {
+          showSummaryContent();
+        } else {
+          showPinLock();
+        }
+      }
     });
   });
+
+  // ---------- PIN lock for the summary view ----------
+  var SUMMARY_PIN = '2086';
+  var pinInput = document.getElementById('pinInput');
+  var pinDots = document.querySelectorAll('.pin-dot');
+  var pinError = document.getElementById('pinError');
+
+  function updatePinDots() {
+    var val = pinInput.value;
+    pinDots.forEach(function (d, i) { d.classList.toggle('filled', i < val.length); });
+  }
+
+  pinInput.addEventListener('input', function () {
+    pinInput.value = pinInput.value.replace(/\D/g, '').slice(0, 4);
+    updatePinDots();
+    pinError.textContent = '';
+  });
+
+  pinInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); tryUnlock(); }
+  });
+
+  document.getElementById('pinConfirmBtn').addEventListener('click', tryUnlock);
+
+  document.getElementById('pinLock').addEventListener('click', function (e) {
+    if (e.target.id !== 'pinConfirmBtn') pinInput.focus();
+  });
+
+  function tryUnlock() {
+    if (pinInput.value === SUMMARY_PIN) {
+      sessionStorage.setItem('summaryUnlocked', '1');
+      showSummaryContent();
+    } else {
+      pinError.textContent = '暗証番号が違います / Incorrect PIN.';
+      pinInput.value = '';
+      updatePinDots();
+      pinInput.focus();
+    }
+  }
+
+  function showSummaryContent() {
+    document.getElementById('pinLock').style.display = 'none';
+    document.getElementById('summaryContent').style.display = '';
+    var active = document.querySelector('.group-tab.active');
+    loadGroup(active ? active.dataset.group : 'daily');
+  }
+
+  function showPinLock() {
+    document.getElementById('pinLock').style.display = '';
+    document.getElementById('summaryContent').style.display = 'none';
+    pinInput.value = '';
+    updatePinDots();
+    pinError.textContent = '';
+    setTimeout(function () { pinInput.focus(); }, 50);
+  }
 
   // ---------- submit ----------
   var statusEl = document.getElementById('status');
@@ -523,8 +620,7 @@
     foot.innerHTML = '<tr><td>合計/Total</td><td>' + grand.toFixed(1) + '</td></tr>';
   }
 
-  // Load the Daily view up front so the tab has data the first time it's opened.
-  loadGroup('daily');
+  // Note: totals are not fetched until the correct PIN is entered (see showSummaryContent above).
 </script>
 </body>
 </html>
