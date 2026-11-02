@@ -318,7 +318,7 @@
       tab.classList.add('active');
       document.getElementById(tab.dataset.view).classList.add('active');
       if (tab.dataset.view === 'summaryView') {
-        if (sessionStorage.getItem('summaryUnlocked') === '1') {
+        if (summaryUnlocked) {
           showSummaryContent();
         } else {
           showPinLock();
@@ -328,6 +328,8 @@
   });
 
   // ---------- PIN lock for the summary view ----------
+  // Kept only in memory (not sessionStorage/localStorage), so a page reload always re-locks it.
+  var summaryUnlocked = false;
   var SUMMARY_PIN = '2086';
   var pinInput = document.getElementById('pinInput');
   var pinDots = document.querySelectorAll('.pin-dot');
@@ -356,7 +358,7 @@
 
   function tryUnlock() {
     if (pinInput.value === SUMMARY_PIN) {
-      sessionStorage.setItem('summaryUnlocked', '1');
+      summaryUnlocked = true;
       showSummaryContent();
     } else {
       pinError.textContent = '暗証番号が違います / Incorrect PIN.';
