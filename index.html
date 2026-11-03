@@ -258,9 +258,14 @@
 
       <!-- MONTHLY: all sections + overall total by default, or pick one section -->
       <div id="monthlyGroup" class="group-panel" style="display:none;">
-        <select id="monthlySectionFilter" style="margin-bottom:12px;">
-          <option value="">全体 / All sections</option>
-        </select>
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+          <select id="monthlyMonthFilter" style="flex:1;">
+            <option value="">全ての月 / All months</option>
+          </select>
+          <select id="monthlySectionFilter" style="flex:1;">
+            <option value="">全体 / All sections</option>
+          </select>
+        </div>
         <div class="table-scroll">
           <table id="monthlyTable">
             <thead id="monthlyHead"><tr><th>月 / Month</th><th>合計 (kg)</th></tr></thead>
@@ -463,6 +468,7 @@
   });
 
   document.getElementById('monthlySectionFilter').addEventListener('change', loadMonthly);
+  document.getElementById('monthlyMonthFilter').addEventListener('change', loadMonthly);
 
   // Fill the Monthly tab's section dropdown once.
   fetch(API_URL + '?action=sections')
@@ -508,38 +514,47 @@
     foot.innerHTML = '<tr><td>合計/Total</td><td>' + grand.toFixed(1) + '</td></tr>';
   }
 
-  // ---- Monthly: "All sections" pivot (with overall total) by default, or one selected section ----
-  function loadMonthly() {
-    var section = document.getElementById('monthlySectionFilter').value;
-    if (section) {
-      fetch(API_URL + '?action=summary&section=' + encodeURIComponent(section))
-        .then(function (r) { return r.json(); })
-        .then(renderMonthlySingle)
-        .catch(function (err) { showEmpty('エラー / Error: ' + err.message); });
-    } else {
-      fetch(API_URL + '?action=sectionTable')
-        .then(function (r) { return r.json(); })
-        .then(renderMonthlyPivot)
-        .catch(function (err) { showEmpty('エラー / Error: ' + err.message); });
-    }
+  // ---- Monthly: pick a month and/or a section to narrow the pivot table ----
+  // One fetch gets every month x section total; the two dropdowns just slice
+  // that same data client-side, so "9月分" / "10月分" etc. switch instantly.
+  function monthLabel(m) {
+    var parts = m.split('-');
+    return parts[0] + '年' + parseInt(parts[1], 10) + '月';
   }
 
-  function renderMonthlySingle(rows) {
-    var head = document.getElementById('monthlyHead');
-    var body = document.getElementById('monthlyBody');
-    var foot = document.getElementById('monthlyFoot');
-    head.innerHTML = '<tr><th>月 / Month</th><th>合計 (kg)</th></tr>';
-    body.innerHTML = ''; foot.innerHTML = '';
-    if (!rows || rows.length === 0) { showEmpty('データがまだありません / No entries yet.'); return; }
+  function loadMonthly() {
+    fetch(API_URL + '?action=sectionTable')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        populateMonthFilter((data && data.months) || []);
+        renderMonthlyFromPivot(data);
+      })
+      .catch(function (err) { showEmpty('エラー / Error: ' + err.message); });
+  }
 
-    var grand = 0;
-    rows.forEach(function (r) {
-      grand += r.total;
-      var tr = document.createElement('tr');
-      tr.innerHTML = '<td>' + r.month + '</td><td>' + r.total.toFixed(1) + '</td>';
-      body.appendChild(tr);
+  function populateMonthFilter(months) {
+    var sel = document.getElementById('monthlyMonthFilter');
+    var current = sel.value;
+    sel.innerHTML = '<option value="">全ての月 / All months</option>';
+    months.forEach(function (m) {
+      var o = document.createElement('option');
+      o.value = m; o.textContent = monthLabel(m);
+      sel.appendChild(o);
     });
-    foot.innerHTML = '<tr><td>合計/Total</td><td>' + grand.toFixed(1) + '</td></tr>';
+    if (months.indexOf(current) !== -1) sel.value = current;
+  }
+
+  function renderMonthlyFromPivot(data) {
+    var monthFilter = document.getElementById('monthlyMonthFilter').value;
+    var sectionFilter = document.getElementById('monthlySectionFilter').value;
+    var allMonths = (data && data.months) || [];
+    var allSections = (data && data.sections) || [];
+
+    renderMonthlyPivot({
+      months: monthFilter ? [monthFilter] : allMonths,
+      sections: sectionFilter ? [sectionFilter] : allSections,
+      table: (data && data.table) || {}
+    });
   }
 
   function renderMonthlyPivot(data) {
